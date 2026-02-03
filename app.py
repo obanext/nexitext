@@ -8,9 +8,11 @@ import json
 
 from services import conversations_client
 from services.oba_helpers import make_envelope
+from flask_cors import CORS
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Alleen nodig voor OBA proxies
 OBA_API_KEY = os.environ["OBA_API_KEY"]
