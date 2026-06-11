@@ -288,8 +288,9 @@ async function sendMessage() {
         hideLoader();
         clearTimeout(timeoutHandle);
 
-        const { response: resp, thread_id: newTid } = data;
+        const { response: resp, thread_id: newTid, debug } = data;
         if (newTid) thread_id = newTid;
+        if (debug) displayDebugMessage(debug);
 
         switch (resp?.type) {
             case 'agenda':
@@ -360,7 +361,8 @@ async function sendStatusKlaar() {
             })
         });
         const data = await response.json();
-        const { response: resp } = data || {};
+        const { response: resp, debug } = data || {};
+        if (debug) displayDebugMessage(debug);
         if (resp?.message) {
             displayAssistantMessage(resp.message);
         } else if (resp && typeof resp === 'string') {
@@ -368,6 +370,52 @@ async function sendStatusKlaar() {
         }
         scrollToBottom();
     } catch (error) {}
+}
+
+
+function formatDebugTrace(debugTrace) {
+    if (!Array.isArray(debugTrace) || debugTrace.length === 0) return '';
+    return debugTrace.map((entry, idx) => {
+        const stage = entry?.stage || `step_${idx + 1}`;
+        const payload = entry?.payload ?? entry;
+        let rendered;
+        try {
+            rendered = JSON.stringify(payload, null, 2);
+        } catch (e) {
+            rendered = String(payload);
+        }
+        return `${idx + 1}. ${stage}\n${rendered}`;
+    }).join('\n\n');
+}
+
+function displayDebugMessage(debugTrace) {
+    const debugText = formatDebugTrace(debugTrace);
+    if (!debugText) return;
+
+    const messageContainer = document.getElementById('messages');
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('assistant-message');
+    wrapper.style.fontFamily = 'monospace';
+    wrapper.style.fontSize = '12px';
+    wrapper.style.whiteSpace = 'pre-wrap';
+    wrapper.style.background = '#f3f3f3';
+    wrapper.style.border = '1px solid #ddd';
+    wrapper.style.padding = '10px';
+
+    const title = document.createElement('div');
+    title.textContent = 'DEBUG TOOLING';
+    title.style.fontWeight = 'bold';
+    title.style.marginBottom = '8px';
+
+    const pre = document.createElement('pre');
+    pre.textContent = debugText;
+    pre.style.margin = '0';
+    pre.style.whiteSpace = 'pre-wrap';
+
+    wrapper.appendChild(title);
+    wrapper.appendChild(pre);
+    messageContainer.appendChild(wrapper);
+    scrollToBottom();
 }
 
 function displayUserMessage(message) {
@@ -707,8 +755,9 @@ async function applyFiltersAndSend() {
 
         hideLoader();
 
-        const { response: resp, thread_id: newTid } = data;
+        const { response: resp, thread_id: newTid, debug } = data;
         if (newTid) thread_id = newTid;
+        if (debug) displayDebugMessage(debug);
 
         if (resp && resp.message && resp.type !== 'faq') {
             displayAssistantMessage(resp.message);
@@ -813,7 +862,8 @@ async function sendHelpMessage(message) {
         }
         const data = await response.json();
         hideLoader();
-        const { response: resp } = data || {};
+        const { response: resp, debug } = data || {};
+        if (debug) displayDebugMessage(debug);
         if (resp?.message) {
             displayAssistantMessage(resp.message);
         } else if (resp && typeof resp === 'string') {

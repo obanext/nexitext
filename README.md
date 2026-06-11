@@ -73,3 +73,24 @@ Tijdens de ontwikkeling zijn de volgende onderdelen gerealiseerd:
 - Backend zo opgezet dat zowel **Nexi Text** als **Nexi Voice** frontends erop aangesloten kunnen worden.
 
 Copyright (c) 2025 / OBA . MIT, CC BY 4.0 (met bronvermelding) 
+
+## Tijdelijke chat-debug
+
+Deze build toont tijdelijk backend-debug informatie in de chat. Dit staat standaard aan in deze ZIP.
+
+Uitzetten kan met:
+
+```bash
+NEXITEXT_DEBUG_CHAT=false
+```
+
+De debug-output toont onder andere:
+- user input
+- gekozen tool
+- tool arguments
+- tool result
+- Typesense request body
+- Typesense response summary
+- frontend envelope summary
+
+Authorization/API-key waarden worden geredacteerd.

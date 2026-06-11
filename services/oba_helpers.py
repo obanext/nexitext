@@ -19,6 +19,37 @@ def _log_json(label: str, payload: Any) -> None:
         print(f"{label} {payload}", flush=True)
 
 
+def _append_debug(params: Dict[str, Any], stage: str, payload: Any) -> None:
+    """Append tijdelijke chat-debug als conversations_client een _debug_trace meestuurt."""
+    trace = params.get("_debug_trace") if isinstance(params, dict) else None
+    if isinstance(trace, list):
+        trace.append({"stage": stage, "payload": payload})
+
+
+def _typesense_search_summary(body: Dict[str, Any]) -> Dict[str, Any]:
+    search = (body.get("searches") or [{}])[0]
+    return {
+        "collection": search.get("collection"),
+        "q": search.get("q"),
+        "query_by": search.get("query_by"),
+        "filter_by": search.get("filter_by"),
+        "vector_query": search.get("vector_query"),
+        "include_fields": search.get("include_fields"),
+        "per_page": search.get("per_page"),
+        "prefix": search.get("prefix"),
+    }
+
+
+def _typesense_response_summary(response_json: Dict[str, Any]) -> Dict[str, Any]:
+    first = (response_json.get("results") or [{}])[0]
+    return {
+        "found": first.get("found"),
+        "out_of": first.get("out_of"),
+        "hits_returned": len(first.get("hits") or []),
+        "search_time_ms": first.get("search_time_ms"),
+    }
+
+
 def _log_typesense_request(kind: str, body: Dict[str, Any]) -> None:
     search = (body.get("searches") or [{}])[0]
     _log_json(f"[TS][{kind}] request", {
@@ -105,6 +136,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     print(f"[TS][books] POST {TYPESENSE_API_URL}", flush=True)
     _log_typesense_request("books", body)
+    _append_debug(params, "typesense_request.books", _typesense_search_summary(body))
 
     try:
         r = requests.post(
@@ -118,6 +150,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             return []
         response_json = r.json()
         _log_typesense_response("books", response_json)
+        _append_debug(params, "typesense_response.books", _typesense_response_summary(response_json))
         hits = response_json.get("results", [{}])[0].get("hits", [])
         out = []
         for h in hits:
@@ -145,6 +178,7 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     }]}
     print(f"[TS][faq] POST {TYPESENSE_API_URL}", flush=True)
     _log_typesense_request("faq", body)
+    _append_debug(params, "typesense_request.faq", _typesense_search_summary(body))
     try:
         r = requests.post(
             TYPESENSE_API_URL,
@@ -156,6 +190,7 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             return []
         response_json = r.json()
         _log_typesense_response("faq", response_json)
+        _append_debug(params, "typesense_response.faq", _typesense_response_summary(response_json))
         hits = response_json.get("results", [{}])[0].get("hits", [])
         out: List[Dict[str, Any]] = []
         for h in hits:
@@ -200,6 +235,7 @@ def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     print(f"[TS][events] POST {TYPESENSE_API_URL}", flush=True)
     _log_typesense_request("events", body)
+    _append_debug(params, "typesense_request.events", _typesense_search_summary(body))
 
     try:
         r = requests.post(
@@ -216,6 +252,7 @@ def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         response_json = r.json()
         _log_typesense_response("events", response_json)
+        _append_debug(params, "typesense_response.events", _typesense_response_summary(response_json))
         hits = response_json.get("results", [{}])[0].get("hits", [])
         out: List[Dict[str, Any]] = []
 

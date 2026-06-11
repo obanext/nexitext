@@ -1,5 +1,6 @@
 # services/conversations_client.py
 import json
+import os
 from typing import Any, List, Dict, Optional, Union
 
 from openai import OpenAI
@@ -29,6 +30,8 @@ client = OpenAI()
 
 # Per-conversatie cache van laatste resultaten (boeken of agenda)
 LAST_RESULTS: dict[str, dict] = {}
+DEBUG_CHAT = os.getenv("NEXITEXT_DEBUG_CHAT", "true").lower() in ("1", "true", "yes", "on")
+
 
 
 def _log_json(label: str, payload: Any) -> None:
@@ -101,6 +104,40 @@ def _dyn_system_for(conversation_id: str) -> str:
             dyn = f"{SYSTEM}\n\n{ctx}"
     return dyn
 
+
+
+
+def _redact_debug_string(value: str) -> str:
+    # Houd URL-variabelen zichtbaar, maar lek geen authorization/API-key waarden in de chat.
+    value = value.replace("X-TYPESENSE-API-KEY", "X-TYPESENSE-API-KEY_REDACTED")
+    if "authorization=" in value:
+        import re
+        value = re.sub(r"authorization=[^&\s]+", "authorization=[REDACTED]", value)
+    return value
+
+
+def _strip_internal_debug(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        clean = {}
+        for k, v in obj.items():
+            if k.startswith("_debug") or k == "_call_id":
+                continue
+            if k.lower() in ("authorization", "api_key", "apikey", "key", "token"):
+                clean[k] = "[REDACTED]"
+            else:
+                clean[k] = _strip_internal_debug(v)
+        return clean
+    if isinstance(obj, list):
+        return [_strip_internal_debug(v) for v in obj]
+    if isinstance(obj, str):
+        return _redact_debug_string(obj)
+    return obj
+
+
+def _attach_debug(envelope: Dict[str, Any], debug_trace: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    if DEBUG_CHAT and isinstance(debug_trace, list):
+        envelope["debug"] = debug_trace
+    return envelope
 
 def _handle_tool_result(
     name: str,
@@ -283,6 +320,10 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
     - Geen toolcall  → return tekst-envelop
     - Wel toolcall   → commit outputs + return gevulde envelop (incl. korte ack-tekst)
     """
+    debug_trace: List[Dict[str, Any]] = []
+    if DEBUG_CHAT:
+        debug_trace.append({"stage": "user_input", "payload": {"text": user_text, "conversation_id": conversation_id}})
+
     _log_json("[CHAT] user", {"conversation_id": conversation_id, "text": user_text})
 
     # 1) Eerste beurt met tools (system dynamisch met LAST_RESULTS)
@@ -299,13 +340,16 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
     calls = _extract_tool_calls(resp)
     if not calls:
         text = (resp.output_text or "").strip()
-        return make_envelope(
+        envelope = make_envelope(
             "text",
             results=[],
             url=None,
             message=text,
             thread_id=conversation_id,
         )
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "tool_selection", "payload": {"tool_calls": []}})
+        return _attach_debug(envelope, debug_trace)
 
     # 3) Verwerk alle toolcalls
     envelope: Optional[Dict[str, Any]] = None
@@ -316,12 +360,18 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
         call_id = getattr(call, "call_id", None) or getattr(call, "id", None)
         args = call.arguments if isinstance(call.arguments, dict) else json.loads(call.arguments or "{}")
         _log_json("[TOOLS] call", {"name": name, "call_id": call_id, "args": args})
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "tool_call", "payload": {"name": name, "call_id": call_id, "arguments": args}})
 
         impl = TOOL_IMPLS.get(name)
         result = impl(**args) if impl else {"error": f"Unknown tool: {name}"}
         _log_json("[TOOLS] result", {"name": name, "call_id": call_id, "result": result})
-        # geef call_id mee in result, zodat _handle_tool_result het kan loggen
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "tool_result", "payload": {"name": name, "call_id": call_id, "result": _strip_internal_debug(result)}})
+        # geef call_id en debug-trace mee in result
         result["_call_id"] = call_id
+        if DEBUG_CHAT:
+            result["_debug_trace"] = debug_trace
 
         handled = _handle_tool_result(name, result, conversation_id, user_text)
         envelope = handled["envelope"]  # laatste envelope is leidend
@@ -342,12 +392,23 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
     if envelope and not (envelope.get("response") or {}).get("message"):
         envelope["response"]["message"] = ack_text or envelope["response"].get("message")
 
+    if DEBUG_CHAT and envelope:
+        resp = envelope.get("response") or {}
+        debug_trace.append({"stage": "frontend_envelope", "payload": {
+            "type": resp.get("type"),
+            "url": resp.get("url"),
+            "location": resp.get("location"),
+            "message": resp.get("message"),
+            "results_count": len(resp.get("results") or []),
+        }})
+        _attach_debug(envelope, debug_trace)
+
     _log_json("[ENVELOPE] response", envelope)
     print("message " + (envelope.get("response") or {}).get("message", ""), flush=True)
-    return envelope or make_envelope(
+    return envelope or _attach_debug(make_envelope(
         "text",
         results=[],
         url=None,
         message=(ack_text or "Klaar."),
         thread_id=conversation_id,
-    )
+    ), debug_trace)
