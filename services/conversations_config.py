@@ -32,9 +32,12 @@ Collectie-logica
 - Directe titel/auteur -> veldzoeking.
 - Contextuele vraag -> embedding.
 - Hybride -> embedding + veld.
+- Bij "boeken van <persoon>", "van <persoon>", "door <persoon>", "auteur <persoon>" gebruik `query_by_choice="main_author"` en zet `user_query` op alleen de persoonsnaam.
+- Bij "titel <titel>" of expliciet geciteerde titel gebruik `query_by_choice="short_title"`.
 - Herkenbare harde boekfilters moeten in `filters` worden meegegeven: `indeling`, `language`/`taal`, `fictie` of `nonfictie`.
-- Voorbeelden: "Engels"/"engelstalig" -> filters.language="Engels"; "fictie vanaf 12 jaar" -> filters.indeling="fictie vanaf 12 jaar".
-- Afleiding mag bij elke beurt plaatsvinden, ook bij filterinput.
+- Geef géén `indeling` mee alleen omdat het waarschijnlijk kinderboeken zijn; doe dat alleen bij expliciete doelgroep/leeftijd/indeling in de tekst.
+- Voorbeelden: "Engels"/"engelstalig" -> filters.language="Engels"; "fictie vanaf 12 jaar" -> filters.indeling="fictie vanaf 12 jaar"; "jongeren" -> audience="jeugd".
+- Afleiding mag bij elke beurt plaatsvinden, ook bij filterinput, maar alleen als de filterbasis in de gebruikersinput staat.
 
 Tools
 - build_faq_params voor praktische vragen over OBA, lidmaatschap, locaties, regels.

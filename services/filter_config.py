@@ -40,19 +40,19 @@ BOOK_INDELING: Dict[str, Dict[str, Any]] = {
     },
     "fictie tot 9 jaar": {
         "label": "Fictie tot 9 jaar",
-        "aliases": ["fictie tot 9 jaar", "boeken tot 9 jaar", "kinderen tot 9 jaar"],
+        "aliases": ["fictie tot 9 jaar", "boeken tot 9 jaar", "kinderen tot 9 jaar", "kinderen", "kind"],
         "typesense_field": "indeling",
         "typesense_value": "fictie tot 9 jaar",
     },
     "fictie 9 tot 12 jaar": {
         "label": "Fictie 9 tot 12 jaar",
-        "aliases": ["fictie 9 tot 12 jaar", "9 tot 12 jaar", "9 t/m 12 jaar", "boeken 9 tot 12"],
+        "aliases": ["fictie 9 tot 12 jaar", "9 tot 12 jaar", "9 t/m 12 jaar", "boeken 9 tot 12", "kinderen", "kind", "jeugd"],
         "typesense_field": "indeling",
         "typesense_value": "fictie 9 tot 12 jaar",
     },
     "fictie vanaf 12 jaar": {
         "label": "Fictie vanaf 12 jaar",
-        "aliases": ["fictie vanaf 12 jaar", "vanaf 12 jaar", "12 plus", "12+", "twaalf plus"],
+        "aliases": ["fictie vanaf 12 jaar", "vanaf 12 jaar", "12 plus", "12+", "twaalf plus", "jeugd", "jongeren"],
         "typesense_field": "indeling",
         "typesense_value": "fictie vanaf 12 jaar",
     },
@@ -70,13 +70,13 @@ BOOK_INDELING: Dict[str, Dict[str, Any]] = {
     },
     "info tot 9 jaar": {
         "label": "Info tot 9 jaar",
-        "aliases": ["info tot 9 jaar", "non-fictie tot 9 jaar", "informatieve boeken tot 9 jaar"],
+        "aliases": ["info tot 9 jaar", "non-fictie tot 9 jaar", "informatieve boeken tot 9 jaar", "kinderen", "kind"],
         "typesense_field": "indeling",
         "typesense_value": "info tot 9 jaar",
     },
     "info vanaf 9 jaar": {
         "label": "Info vanaf 9 jaar",
-        "aliases": ["info vanaf 9 jaar", "non-fictie vanaf 9 jaar", "informatieve boeken vanaf 9 jaar"],
+        "aliases": ["info vanaf 9 jaar", "non-fictie vanaf 9 jaar", "informatieve boeken vanaf 9 jaar", "kinderen", "kind", "jeugd"],
         "typesense_field": "indeling",
         "typesense_value": "info vanaf 9 jaar",
     },
@@ -254,9 +254,34 @@ def build_typesense_filter(parts: Iterable[str]) -> str:
     return " && ".join([p for p in parts if p])
 
 
-def normalize_book_filters(filters: Optional[Dict[str, Any]] = None, text: Optional[str] = None) -> Dict[str, Any]:
+def option_is_mentioned(options: Dict[str, Dict[str, Any]], key: str, cfg: Dict[str, Any], text: str) -> bool:
+    """Return True als een filteroptie aantoonbaar in de originele usertekst staat.
+
+    Dit voorkomt dat door de toolrouter verzonnen filters hard worden toegepast.
+    Frontendfilters gebruiken deze check niet: die zijn al expliciete gebruikerskeuzes.
+    """
+    if not text:
+        return False
+    haystack = norm_text(text)
+    candidates = [key, cfg.get("label", "")] + list(cfg.get("aliases") or [])
+    for candidate in candidates:
+        c = norm_text(str(candidate))
+        if not c:
+            continue
+        if re.search(r"\b" + re.escape(c) + r"\b", haystack):
+            return True
+    return False
+
+
+def normalize_book_filters(
+    filters: Optional[Dict[str, Any]] = None,
+    text: Optional[str] = None,
+    trust_explicit_filters: bool = False,
+    trusted_indeling_values: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     filters = filters or {}
     text = text or ""
+    trusted_indeling_values = trusted_indeling_values or []
     normalized: List[Dict[str, Any]] = []
 
     indeling_values: List[str] = []
@@ -271,6 +296,15 @@ def normalize_book_filters(filters: Optional[Dict[str, Any]] = None, text: Optio
         resolved = resolve_option(BOOK_INDELING, raw)
         if resolved:
             key, cfg = resolved
+            if trust_explicit_filters or option_is_mentioned(BOOK_INDELING, key, cfg, text):
+                normalized.append({"domain": "books", "filter": "indeling", "key": key, "label": cfg["label"], "field": cfg["typesense_field"], "value": cfg["typesense_value"]})
+
+    # Audience-derived filters zijn al door de backend gevalideerd tegen de originele tekst.
+    # Ze worden daarom als harde, maar nog steeds catalogusgebonden, indelingwaarden toegevoegd.
+    for raw in trusted_indeling_values:
+        resolved = resolve_option(BOOK_INDELING, raw)
+        if resolved:
+            key, cfg = resolved
             normalized.append({"domain": "books", "filter": "indeling", "key": key, "label": cfg["label"], "field": cfg["typesense_field"], "value": cfg["typesense_value"]})
 
     raw_language = filters.get("language") or filters.get("taal")
@@ -278,7 +312,8 @@ def normalize_book_filters(filters: Optional[Dict[str, Any]] = None, text: Optio
         resolved = resolve_option(BOOK_LANGUAGES, raw_language)
         if resolved:
             key, cfg = resolved
-            normalized.append({"domain": "books", "filter": "language", "key": key, "label": cfg["label"], "field": cfg["typesense_field"], "value": cfg["typesense_value"]})
+            if trust_explicit_filters or option_is_mentioned(BOOK_LANGUAGES, key, cfg, text):
+                normalized.append({"domain": "books", "filter": "language", "key": key, "label": cfg["label"], "field": cfg["typesense_field"], "value": cfg["typesense_value"]})
 
     # Natural-language fallback: alleen als filter nog niet expliciet aanwezig is.
     if text:
@@ -342,7 +377,11 @@ def _agenda_range_bounds(key: str) -> Optional[Tuple[int, int]]:
     return int(start.timestamp()), int(end.timestamp())
 
 
-def normalize_agenda_filters(filters: Optional[Dict[str, Any]] = None, text: Optional[str] = None) -> Dict[str, Any]:
+def normalize_agenda_filters(
+    filters: Optional[Dict[str, Any]] = None,
+    text: Optional[str] = None,
+    trust_explicit_filters: bool = False,
+) -> Dict[str, Any]:
     filters = filters or {}
     text = text or ""
     specs = [
@@ -366,6 +405,10 @@ def normalize_agenda_filters(filters: Optional[Dict[str, Any]] = None, text: Opt
                 raw = filters.get(alias)
                 break
         resolved = resolve_option(options, raw) if raw else None
+        if resolved:
+            key, cfg = resolved
+            if not trust_explicit_filters and not option_is_mentioned(options, key, cfg, text):
+                resolved = None
         if not resolved and text:
             resolved = find_option_in_text(options, text)
         if not resolved:

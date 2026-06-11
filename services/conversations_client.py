@@ -123,7 +123,7 @@ def _strip_internal_debug(obj: Any) -> Any:
         for k, v in obj.items():
             if k.startswith("_debug") or k == "_call_id":
                 continue
-            if k.lower() in ("authorization", "api_key", "apikey", "key", "token"):
+            if k.lower() in ("authorization", "api_key", "apikey", "token"):
                 clean[k] = "[REDACTED]"
             else:
                 clean[k] = _strip_internal_debug(v)
@@ -354,6 +354,7 @@ def apply_structured_filters(
             query_by_choice=prev_params.get("query_by") or "embedding",
             location_kraaiennest=(prev_params.get("collection") == COLLECTION_BOOKS_KN),
             filters=filters,
+            filter_source="frontend",
         )
         if DEBUG_CHAT:
             debug_trace.append({"stage": "structured_tool_result", "payload": {"name": "build_search_params", "result": _strip_internal_debug(result)}})
@@ -382,6 +383,7 @@ def apply_structured_filters(
             wanneer=filters.get("wanneer") or filters.get("date"),
             type_activiteit=filters.get("type_activiteit") or filters.get("type"),
             agenda_text="",
+            filter_source="frontend",
         )
         if DEBUG_CHAT:
             debug_trace.append({"stage": "structured_tool_result", "payload": {"name": "build_agenda_query", "result": _strip_internal_debug(result)}})
@@ -461,6 +463,10 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
             debug_trace.append({"stage": "tool_call", "payload": {"name": name, "call_id": call_id, "arguments": args}})
 
         impl = TOOL_IMPLS.get(name)
+        if impl and name in ("build_search_params", "build_compare_params", "build_agenda_query"):
+            # Gebruik de volledige originele usertekst alleen voor filtervalidatie.
+            # De door de tool gekozen q/agenda_text blijft ongewijzigd.
+            args.setdefault("original_text", user_text)
         result = impl(**args) if impl else {"error": f"Unknown tool: {name}"}
         _log_json("[TOOLS] result", {"name": name, "call_id": call_id, "result": result})
         if DEBUG_CHAT:

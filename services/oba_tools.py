@@ -31,6 +31,24 @@ NONFICTION_MAP = {
     "volwassen": ["info volwassenen"],
 }
 
+AUDIENCE_ALIASES = {
+    "baby": ["baby", "baby's", "babies"],
+    "peuter": ["peuter", "peuters"],
+    "kleuter": ["kleuter", "kleuters"],
+    "kind": ["kind", "kinderen"],
+    "jeugd": ["jeugd", "jongeren", "tieners"],
+    "oudere_jeugd": ["oudere jeugd", "vanaf 15", "15+", "15 plus"],
+    "volwassen": ["volwassen", "volwassenen"],
+}
+
+
+def _audience_is_mentioned(audience: Optional[str], text: str) -> bool:
+    if not audience or not text:
+        return False
+    aliases = AUDIENCE_ALIASES.get(audience, [])
+    haystack = text.lower()
+    return any(re.search(r"\b" + re.escape(alias.lower()) + r"\b", haystack) for alias in aliases)
+
 
 def _merge_filter_by(*parts: Optional[str]) -> str:
     return " && ".join([p for p in parts if p])
@@ -61,17 +79,24 @@ def _build_search_params(
     audience: Optional[str] = None,
     content_type: Optional[str] = None,
     filters: Optional[Dict[str, Any]] = None,
+    filter_source: str = "llm",
+    original_text: Optional[str] = None,
 ) -> Dict[str, Any]:
 
     text = (user_query or "").strip()
+    validation_text = (original_text or user_query or "").strip()
     filters = _coerce_filters(filters)
+    trust_explicit_filters = (filter_source == "frontend")
 
     if query_by_choice:
         qb = query_by_choice
     else:
-        if _looks_author(text) and not _looks_title(text):
+        # Gebruik de originele gebruikerszin voor intentieherkenning. De toolrouter kan
+        # user_query al hebben teruggebracht tot alleen "Orwell", waardoor "van" verdwijnt.
+        intent_text = validation_text or text
+        if _looks_author(intent_text) and not _looks_title(intent_text):
             qb = "main_author"
-        elif _looks_title(text) and not _looks_author(text):
+        elif _looks_title(intent_text) and not _looks_author(intent_text):
             qb = "short_title"
         else:
             qb = "embedding"
@@ -82,16 +107,23 @@ def _build_search_params(
     else:
         vq = ""
 
-    # Bestaande doelgroep/content_type-logica blijft bestaan, maar wordt nu via dezelfde harde filtercatalogus genormaliseerd.
-    inferred_indeling: List[str] = []
-    if audience and content_type in ("fictie", "beide"):
-        inferred_indeling += FICTION_MAP.get(audience, [])
-    if audience and content_type in ("nonfictie", "beide"):
-        inferred_indeling += NONFICTION_MAP.get(audience, [])
-    if inferred_indeling and "indeling" not in filters:
-        filters["indeling"] = inferred_indeling
+    # Doelgroep-logica: accepteer een LLM-audience alleen als die doelgroep ook aantoonbaar
+    # in de originele gebruikerszin staat. Zonder content_type betekent dit bestaande
+    # codecontract: beide (fictie + non-fictie).
+    trusted_indeling_values: List[str] = []
+    if audience and _audience_is_mentioned(audience, validation_text):
+        effective_content_type = content_type or "beide"
+        if effective_content_type in ("fictie", "beide"):
+            trusted_indeling_values += FICTION_MAP.get(audience, [])
+        if effective_content_type in ("nonfictie", "beide"):
+            trusted_indeling_values += NONFICTION_MAP.get(audience, [])
 
-    normalized = normalize_book_filters(filters=filters, text=text)
+    normalized = normalize_book_filters(
+        filters=filters,
+        text=validation_text,
+        trust_explicit_filters=trust_explicit_filters,
+        trusted_indeling_values=trusted_indeling_values,
+    )
     fb = normalized["filter_by"]
     books = COLLECTION_BOOKS_KN if location_kraaiennest else COLLECTION_BOOKS
 
@@ -114,6 +146,8 @@ def _build_compare_params(
     vector_alpha: Optional[float] = None,
     location_kraaiennest: Optional[bool] = False,
     filters: Optional[Dict[str, Any]] = None,
+    filter_source: str = "llm",
+    original_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compare gebruikt dezelfde boekroute, maar met eigen Message en genormaliseerde filters.
 
@@ -121,9 +155,11 @@ def _build_compare_params(
     niet-bestaand uitsluitfilter geconstrueerd; filters die wel bestaan worden deterministisch toegepast.
     """
     text = (comparison_query or "").strip()
+    validation_text = (original_text or comparison_query or "").strip()
     filters = _coerce_filters(filters)
+    trust_explicit_filters = (filter_source == "frontend")
     alpha = vector_alpha if isinstance(vector_alpha, (int, float)) else 0.8
-    normalized = normalize_book_filters(filters=filters, text=text)
+    normalized = normalize_book_filters(filters=filters, text=validation_text, trust_explicit_filters=trust_explicit_filters)
 
     return {
         "q": text,
@@ -163,13 +199,18 @@ def _build_agenda_query(
     wanneer: Optional[str] = None,
     type_activiteit: Optional[str] = None,
     agenda_text: Optional[str] = None,
+    filter_source: str = "llm",
+    original_text: Optional[str] = None,
 ) -> Dict[str, Any]:
 
     scenario = (scenario or "").upper().strip()
     text = (agenda_text or "").strip()
+    validation_text = (original_text or agenda_text or "").strip()
+    trust_explicit_filters = (filter_source == "frontend")
     normalized = normalize_agenda_filters(
         filters=_agenda_filters_from_args(waar, leeftijd, wanneer, type_activiteit),
-        text=text,
+        text=validation_text,
+        trust_explicit_filters=trust_explicit_filters,
     )
     normalized_filters = normalized["normalized_filters"]
 
