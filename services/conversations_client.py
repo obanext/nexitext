@@ -12,6 +12,7 @@ from services.oba_tools import (
     COLLECTION_EVENTS,
     COLLECTION_BOOKS_KN,
 )
+from services.filter_config import parse_legacy_filter_string
 from services.oba_helpers import (
     make_envelope,
     typesense_search_books,
@@ -189,6 +190,7 @@ def _handle_tool_result(
                 LAST_RESULTS[conversation_id] = {
                     "kind": "books",
                     "items": book_results[:20],  # bevat ppn/titel/auteur/beschrijving
+                    "params": _strip_internal_debug(result),
                 }
             envelope = make_envelope(
                 "collection",
@@ -226,6 +228,7 @@ def _handle_tool_result(
                         }
                         for it in ag_results[:20]
                     ],
+                    "params": _strip_internal_debug(result),
                 }
 
             first_location = None
@@ -261,6 +264,7 @@ def _handle_tool_result(
                         }
                         for it in ag_results[:20]
                     ],
+                    "params": _strip_internal_debug(result),
                 }
 
             first_location: Optional[str] = None
@@ -313,6 +317,99 @@ def _ack_instruction(envelope: Dict[str, Any], user_text: str) -> str:
         )
     # Default voor collectie/agenda/tekst—frontend toont toch de lijst
     return "Zeg iets als: Klaar met zoeken, bekijk wat ik heb gevonden in het overzicht."
+
+
+
+def apply_structured_filters(
+    conversation_id: str,
+    domain: str,
+    filters: Optional[Dict[str, Any]] = None,
+    legacy_filter_string: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Deterministische filterroute voor frontendfilters.
+
+    Behoudt de bestaande envelope, maar slaat de LLM-interpretatiestap over wanneer de
+    frontend harde filterkeys meestuurt.
+    """
+    filters = dict(filters or {})
+    if legacy_filter_string:
+        filters.update(parse_legacy_filter_string(legacy_filter_string))
+
+    debug_trace: List[Dict[str, Any]] = []
+    if DEBUG_CHAT:
+        debug_trace.append({"stage": "structured_filter_input", "payload": {
+            "conversation_id": conversation_id,
+            "domain": domain,
+            "filters": filters,
+            "legacy_filter_string": legacy_filter_string,
+        }})
+
+    prev = LAST_RESULTS.get(conversation_id) or {}
+
+    if domain == "collection":
+        prev_params = prev.get("params") or {}
+        impl = TOOL_IMPLS["build_search_params"]
+        result = impl(
+            user_query=prev_params.get("q") or "",
+            query_by_choice=prev_params.get("query_by") or "embedding",
+            location_kraaiennest=(prev_params.get("collection") == COLLECTION_BOOKS_KN),
+            filters=filters,
+        )
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "structured_tool_result", "payload": {"name": "build_search_params", "result": _strip_internal_debug(result)}})
+        result["_debug_trace"] = debug_trace
+        book_results = typesense_search_books(result)
+        if book_results:
+            LAST_RESULTS[conversation_id] = {"kind": "books", "items": book_results[:20], "params": _strip_internal_debug(result)}
+        envelope = make_envelope(
+            "collection",
+            results=book_results,
+            url=None,
+            message=(NO_RESULTS_MSG if not book_results else result.get("Message")),
+            thread_id=conversation_id,
+        )
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "frontend_envelope", "payload": {"type": "collection", "results_count": len(book_results)}})
+            _attach_debug(envelope, debug_trace)
+        return envelope
+
+    if domain == "agenda":
+        impl = TOOL_IMPLS["build_agenda_query"]
+        result = impl(
+            scenario="A",
+            waar=filters.get("waar") or filters.get("location") or filters.get("locatie"),
+            leeftijd=filters.get("leeftijd") or filters.get("age"),
+            wanneer=filters.get("wanneer") or filters.get("date"),
+            type_activiteit=filters.get("type_activiteit") or filters.get("type"),
+            agenda_text="",
+        )
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "structured_tool_result", "payload": {"name": "build_agenda_query", "result": _strip_internal_debug(result)}})
+        result["_debug_trace"] = debug_trace
+        ag_results = fetch_agenda_results(result.get("API"))
+        if ag_results:
+            LAST_RESULTS[conversation_id] = {"kind": "agenda", "items": ag_results[:20], "params": _strip_internal_debug(result)}
+        first_location = None
+        if ag_results:
+            loc_val = ag_results[0].get("location")
+            if isinstance(loc_val, str) and loc_val.strip():
+                first_location = loc_val.strip()
+        envelope = make_envelope(
+            "agenda",
+            results=ag_results,
+            url=result.get("URL"),
+            message=(NO_RESULTS_MSG if not ag_results else result.get("Message")),
+            thread_id=conversation_id,
+            location=first_location,
+        )
+        if DEBUG_CHAT:
+            debug_trace.append({"stage": "frontend_envelope", "payload": {"type": "agenda", "url": result.get("URL"), "location": first_location, "results_count": len(ag_results)}})
+            _attach_debug(envelope, debug_trace)
+        return envelope
+
+    # Fallback: oude route, maar met zichtbare foutmelding.
+    envelope = make_envelope("text", results=[], url=None, message="Onbekend filterdomein.", thread_id=conversation_id)
+    return _attach_debug(envelope, debug_trace)
 
 
 def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str, Any]]:

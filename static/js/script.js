@@ -225,7 +225,67 @@ function updateActionButtons() {
     }
 }
 
+function renderFilterTemplateFromConfig(config) {
+    const container = document.getElementById("filter-options");
+    if (!config || !Array.isArray(config.groups)) {
+        container.innerHTML = "";
+        return false;
+    }
+
+    const html = config.groups.map(group => {
+        const options = Array.isArray(group.options) ? group.options : [];
+        if (group.type === "select") {
+            const idMap = {
+                waar: "agenda-location",
+                leeftijd: "agenda-age",
+                wanneer: "agenda-date",
+                type_activiteit: "agenda-type"
+            };
+            const id = idMap[group.key] || `filter-${group.key}`;
+            return `
+                <label for="${id}">${group.label}:</label>
+                <select id="${id}" data-filter-key="${group.key}">
+                    <option value="">${group.empty_label || 'Alles'}</option>
+                    ${options.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
+                </select>
+                <br>
+            `;
+        }
+
+        return `
+            <fieldset class="filter-group" data-filter-key="${group.key}">
+                <legend>${group.label}</legend>
+                ${options.map(opt => `
+                    <label><input type="radio" name="${group.key}" value="${opt.value}"> ${opt.label}</label>
+                `).join('')}
+            </fieldset>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
+    return true;
+}
+
 async function loadFilterTemplate(type) {
+    try {
+        const configRes = await fetch(`/filters/${type}`);
+        if (configRes.ok) {
+            const config = await configRes.json();
+            if (renderFilterTemplateFromConfig(config)) {
+                document.querySelectorAll('#filter-options input[type="radio"]').forEach(cb => {
+                    cb.addEventListener('change', checkInput);
+                });
+                document.querySelectorAll('#filter-options select').forEach(sel => {
+                    sel.addEventListener('change', checkInput);
+                });
+                checkInput();
+                return;
+            }
+        }
+    } catch (e) {
+        // fallback naar statische HTML hieronder
+    }
+
     let url = "";
     if (type === "collection") url = "/static/html/filtercollectie.html";
     if (type === "agenda") url = "/static/html/filteragenda.html";
@@ -702,29 +762,36 @@ function sendDetailPageLinkToUser(title, baseUrl, ppn) {
 
 async function applyFiltersAndSend() {
     let filterString = "";
+    let filterDomain = "";
+    let filterValuesJson = {};
 
     const agendaLocation = document.getElementById("agenda-location");
     if (agendaLocation) {
+        filterDomain = "agenda";
         const location = agendaLocation.value;
         const age = document.getElementById("agenda-age")?.value || "";
         const date = document.getElementById("agenda-date")?.value || "";
         const type = document.getElementById("agenda-type")?.value || "";
 
         const selected = [];
-        if (location) selected.push(`Locatie: ${location}`);
-        if (age) selected.push(`Leeftijd: ${age}`);
-        if (date) selected.push(`Wanneer: ${date}`);
-        if (type) selected.push(`Type: ${type}`);
+        if (location) { selected.push(`Locatie: ${location}`); filterValuesJson.waar = location; }
+        if (age) { selected.push(`Leeftijd: ${age}`); filterValuesJson.leeftijd = age; }
+        if (date) { selected.push(`Wanneer: ${date}`); filterValuesJson.wanneer = date; }
+        if (type) { selected.push(`Type: ${type}`); filterValuesJson.type_activiteit = type; }
         filterString = selected.join("||");
     } else {
+        filterDomain = "collection";
         const fic  = document.querySelector('input[name="fictie"]:checked');
         const nonf = document.querySelector('input[name="nonfictie"]:checked');
         const lang = document.querySelector('input[name="language"]:checked');
 
         const selected = [];
-        if (fic)  selected.push(`Indeling: ${fic.value}`);
-        if (nonf) selected.push(`Indeling: ${nonf.value}`);
-        if (lang) selected.push(`Taal: ${lang.value}`);
+        const indeling = [];
+        if (fic)  { selected.push(`Indeling: ${fic.value}`); indeling.push(fic.value); }
+        if (nonf) { selected.push(`Indeling: ${nonf.value}`); indeling.push(nonf.value); }
+        if (indeling.length === 1) filterValuesJson.indeling = indeling[0];
+        if (indeling.length > 1) filterValuesJson.indeling = indeling;
+        if (lang) { selected.push(`Taal: ${lang.value}`); filterValuesJson.language = lang.value; }
         filterString = selected.join("||");
     }
 
@@ -744,6 +811,8 @@ async function applyFiltersAndSend() {
             body: JSON.stringify({
                 thread_id: thread_id,
                 filter_values: filterString,
+                filter_domain: filterDomain,
+                filter_values_json: filterValuesJson,
                 assistant_id: 'asst_ejPRaNkIhjPpNHDHCnoI5zKY'
             })
         });
@@ -769,6 +838,11 @@ async function applyFiltersAndSend() {
                 previousResults = resp.results || [];
                 if (resp.type === 'agenda') {
                     displayAgendaResults(previousResults);
+                    if (resp.url) {
+                        displayAssistantMessage(
+                            `Bekijk alles op <a href="${resp.url}" target="_blank">OBA Agenda</a>`
+                        );
+                    }
                 } else {
                     displaySearchResults(previousResults);
                 }

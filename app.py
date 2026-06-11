@@ -8,6 +8,7 @@ import json
 
 from services import conversations_client
 from services.oba_helpers import make_envelope
+from services.filter_config import frontend_filter_payload
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -86,11 +87,27 @@ def send_message():
     )
 
 
+@app.route("/filters/<domain>", methods=["GET"])
+def filters(domain):
+    return jsonify(frontend_filter_payload(domain))
+
+
 @app.route("/apply_filters", methods=["POST"])
 def apply_filters():
     data = request.json or {}
     cid = data.get("thread_id")
     filters = (data.get("filter_values") or "").strip()
+    structured_filters = data.get("filter_values_json")
+    domain = data.get("filter_domain")
+
+    if isinstance(structured_filters, dict) and domain:
+        out = conversations_client.apply_structured_filters(
+            cid,
+            domain=domain,
+            filters=structured_filters,
+            legacy_filter_string=filters,
+        )
+        return jsonify(out)
 
     prompt = f"[FILTER] {filters}"
     out = conversations_client.ask_with_tools(cid, prompt)

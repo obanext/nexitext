@@ -82,7 +82,19 @@ TOOLS: List[Dict[str, Any]] = [
                         "language": {
                             "type": "string",
                             "enum": LANG_HINTS
-                        }
+                        },
+                        "taal": {
+                            "type": "string",
+                            "enum": LANG_HINTS
+                        },
+                        "indeling": {
+                            "oneOf": [
+                                {"type": "string", "enum": IND_ALL},
+                                {"type": "array", "items": {"type": "string", "enum": IND_ALL}}
+                            ]
+                        },
+                        "fictie": {"type": "string", "enum": IND_FICTION},
+                        "nonfictie": {"type": "string", "enum": IND_NONFICTION}
                     },
                     "additionalProperties": False
                 }

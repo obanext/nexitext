@@ -8,6 +8,11 @@ from services.oba_config import (
     COLLECTION_FAQ,
     COLLECTION_EVENTS,
 )
+from services.filter_config import (
+    normalize_book_filters,
+    normalize_agenda_filters,
+    parse_legacy_filter_string,
+)
 
 FICTION_MAP = {
     "baby": ["prentenboeken baby"],
@@ -26,20 +31,27 @@ NONFICTION_MAP = {
     "volwassen": ["info volwassenen"],
 }
 
-def _mk_filter_by(indeling_list: Optional[List[str]] = None, language: Optional[str] = None) -> str:
-    parts = []
-    if indeling_list:
-        inner = "||".join([f"indeling:={opt}" for opt in indeling_list])
-        parts.append(f"({inner})")
-    if language:
-        parts.append(f"language :={language}")
-    return " && ".join(parts)
+
+def _merge_filter_by(*parts: Optional[str]) -> str:
+    return " && ".join([p for p in parts if p])
+
 
 def _looks_author(text: str) -> bool:
     return bool(re.search(r"\b(auteur|schrijver|door|van)\b", text, re.I))
 
+
 def _looks_title(text: str) -> bool:
     return bool(re.search(r"\btitel\b|\".+\"|\'[^\']+\'", text))
+
+
+def _coerce_filters(filters: Optional[Dict[str, Any]], legacy_filter_string: Optional[str] = None) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    if isinstance(filters, dict):
+        out.update(filters)
+    if legacy_filter_string:
+        out.update(parse_legacy_filter_string(legacy_filter_string))
+    return out
+
 
 def _build_search_params(
     user_query: str,
@@ -52,8 +64,7 @@ def _build_search_params(
 ) -> Dict[str, Any]:
 
     text = (user_query or "").strip()
-    filters = filters or {}
-    language = filters.get("language")
+    filters = _coerce_filters(filters)
 
     if query_by_choice:
         qb = query_by_choice
@@ -71,15 +82,17 @@ def _build_search_params(
     else:
         vq = ""
 
-    indeling: List[str] = []
-
+    # Bestaande doelgroep/content_type-logica blijft bestaan, maar wordt nu via dezelfde harde filtercatalogus genormaliseerd.
+    inferred_indeling: List[str] = []
     if audience and content_type in ("fictie", "beide"):
-        indeling += FICTION_MAP.get(audience, [])
-
+        inferred_indeling += FICTION_MAP.get(audience, [])
     if audience and content_type in ("nonfictie", "beide"):
-        indeling += NONFICTION_MAP.get(audience, [])
+        inferred_indeling += NONFICTION_MAP.get(audience, [])
+    if inferred_indeling and "indeling" not in filters:
+        filters["indeling"] = inferred_indeling
 
-    fb = _mk_filter_by(indeling_list=indeling, language=language)
+    normalized = normalize_book_filters(filters=filters, text=text)
+    fb = normalized["filter_by"]
     books = COLLECTION_BOOKS_KN if location_kraaiennest else COLLECTION_BOOKS
 
     return {
@@ -88,9 +101,60 @@ def _build_search_params(
         "query_by": qb,
         "vector_query": vq,
         "filter_by": fb,
+        "normalized_filters": normalized["normalized_filters"],
         "Message": "Ik heb voor je gezocht en deze boeken gevonden",
         "STATUS": "KLAAR",
     }
+
+
+def _build_compare_params(
+    comparison_query: str,
+    original: Optional[str] = None,
+    mode: Optional[str] = None,
+    vector_alpha: Optional[float] = None,
+    location_kraaiennest: Optional[bool] = False,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Compare gebruikt dezelfde boekroute, maar met eigen Message en genormaliseerde filters.
+
+    De huidige tooldefinitie bevat geen harde exclude-velden zoals ppn/id. Daarom wordt hier geen
+    niet-bestaand uitsluitfilter geconstrueerd; filters die wel bestaan worden deterministisch toegepast.
+    """
+    text = (comparison_query or "").strip()
+    filters = _coerce_filters(filters)
+    alpha = vector_alpha if isinstance(vector_alpha, (int, float)) else 0.8
+    normalized = normalize_book_filters(filters=filters, text=text)
+
+    return {
+        "q": text,
+        "collection": COLLECTION_BOOKS_KN if location_kraaiennest else COLLECTION_BOOKS,
+        "query_by": "embedding",
+        "vector_query": f"embedding:([], alpha: {alpha})",
+        "filter_by": normalized["filter_by"],
+        "normalized_filters": normalized["normalized_filters"],
+        "comparison": {"original": original, "mode": mode},
+        "Message": "Ik heb vergelijkbare boeken gevonden",
+        "STATUS": "KLAAR",
+    }
+
+
+def _agenda_filters_from_args(
+    waar: Optional[str],
+    leeftijd: Optional[str],
+    wanneer: Optional[str],
+    type_activiteit: Optional[str],
+) -> Dict[str, Any]:
+    filters: Dict[str, Any] = {}
+    if waar:
+        filters["waar"] = waar
+    if leeftijd:
+        filters["leeftijd"] = leeftijd
+    if wanneer:
+        filters["wanneer"] = wanneer
+    if type_activiteit:
+        filters["type_activiteit"] = type_activiteit
+    return filters
+
 
 def _build_agenda_query(
     scenario: str,
@@ -102,66 +166,78 @@ def _build_agenda_query(
 ) -> Dict[str, Any]:
 
     scenario = (scenario or "").upper().strip()
+    text = (agenda_text or "").strip()
+    normalized = normalize_agenda_filters(
+        filters=_agenda_filters_from_args(waar, leeftijd, wanneer, type_activiteit),
+        text=text,
+    )
+    normalized_filters = normalized["normalized_filters"]
 
-    if waar and waar.lower() in ("oosterdok", "oba oosterdok"):
-        waar = "Centrale OBA"
-
+    # Scenario A: directe OBA URL/API. Gebruik alleen de OBA-facetwaarden uit de centrale catalogus.
     if scenario == "A":
         base_front = "https://oba.nl/nl/agenda/volledige-agenda"
         qs = []
-        if waar:
-            qs.append("waar=" + ul.quote_plus(f"/root/OBA/{waar}"))
-        if leeftijd:
-            qs.append("leeftijd=" + ul.quote_plus(leeftijd))
-        if wanneer:
-            qs.append("Wanneer=" + wanneer)
-        if type_activiteit:
-            qs.append("type_activiteit=" + ul.quote_plus(type_activiteit))
+        facets = []
+
+        for item in normalized_filters:
+            fname = item.get("filter")
+            oba_value = item.get("oba_value") or item.get("key")
+            if not oba_value:
+                continue
+            if fname == "waar":
+                qs.append("waar=" + ul.quote_plus(f"/root/OBA/{oba_value}"))
+                facets.append("facet=waar%28" + ul.quote_plus(f"/root/OBA/{oba_value}") + "%29")
+            elif fname == "leeftijd":
+                qs.append("leeftijd=" + ul.quote_plus(oba_value))
+                facets.append("facet=leeftijd%28" + ul.quote_plus(oba_value) + "%29")
+            elif fname == "wanneer":
+                qs.append("Wanneer=" + ul.quote_plus(oba_value))
+                facets.append("facet=wanneer%28" + ul.quote_plus(oba_value) + "%29")
+            elif fname == "type_activiteit":
+                qs.append("type_activiteit=" + ul.quote_plus(oba_value))
+                facets.append("facet=type_activiteit%28" + ul.quote_plus(oba_value) + "%29")
 
         url = base_front + ("?" + "&".join(qs) if qs else "")
-
         base_api = "https://zoeken.oba.nl/api/v1/search/?q=table:evenementen&refine=true"
-        facets = []
-        if waar:
-            facets.append("facet=waar%28" + ul.quote_plus(f"/root/OBA/{waar}") + "%29")
-        if leeftijd:
-            facets.append("facet=leeftijd%28" + ul.quote_plus(leeftijd) + "%29")
-        if wanneer:
-            facets.append("facet=wanneer%28" + wanneer + "%29")
-        if type_activiteit:
-            facets.append("facet=type_activiteit%28" + ul.quote_plus(type_activiteit) + "%29")
-
         api = base_api + ("&" + "&".join(facets) if facets else "")
 
         return {
             "URL": url,
             "API": api,
+            "normalized_filters": normalized_filters,
             "Message": "Ik heb deze activiteiten gevonden",
             "STATUS": "KLAAR",
         }
 
+    # Scenario B / fallback: exploratief via Typesense, maar harde filters blijven actief zodra herkenbaar.
     return {
-        "q": agenda_text or "",
+        "q": text,
         "collection": COLLECTION_EVENTS,
         "query_by": "embedding",
         "vector_query": "embedding:([], alpha: 0.8)",
-        "filter_by": "",
+        "filter_by": normalized["filter_by"],
+        "normalized_filters": normalized_filters,
         "Message": "Ik zoek in de agenda",
         "STATUS": "KLAAR",
     }
 
+
 def _build_faq_params(user_query: str) -> Dict[str, Any]:
+    # FAQ-schema is in deze code niet volledig genoeg om harde filters veilig af te dwingen.
     return {
         "q": user_query,
         "collection": COLLECTION_FAQ,
         "query_by": "embedding",
         "vector_query": "embedding:([], alpha: 0.8)",
         "filter_by": "",
+        "normalized_filters": [],
         "STATUS": "KLAAR",
     }
 
+
 TOOL_IMPLS = {
     "build_search_params": _build_search_params,
+    "build_compare_params": _build_compare_params,
     "build_agenda_query": _build_agenda_query,
     "build_faq_params": _build_faq_params,
 }
