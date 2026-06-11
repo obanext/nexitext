@@ -11,6 +11,44 @@ TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY")
 OBA_API_KEY       = os.getenv("OBA_API_KEY", "")
 
 
+def _log_json(label: str, payload: Any) -> None:
+    """Print compacte, leesbare debug-logging zonder secrets."""
+    try:
+        print(f"{label} {json.dumps(payload, ensure_ascii=False, default=str)}", flush=True)
+    except Exception:
+        print(f"{label} {payload}", flush=True)
+
+
+def _log_typesense_request(kind: str, body: Dict[str, Any]) -> None:
+    search = (body.get("searches") or [{}])[0]
+    _log_json(f"[TS][{kind}] request", {
+        "collection": search.get("collection"),
+        "q": search.get("q"),
+        "query_by": search.get("query_by"),
+        "filter_by": search.get("filter_by"),
+        "vector_query": search.get("vector_query"),
+        "include_fields": search.get("include_fields"),
+        "per_page": search.get("per_page"),
+    })
+
+
+def _log_typesense_response(kind: str, response_json: Dict[str, Any]) -> None:
+    result = (response_json.get("results") or [{}])[0]
+    hits = result.get("hits") or []
+    _log_json(f"[TS][{kind}] response", {
+        "found": result.get("found"),
+        "out_of": result.get("out_of"),
+        "hits_returned": len(hits),
+        "search_time_ms": result.get("search_time_ms"),
+    })
+    if hits:
+        doc = hits[0].get("document") or {}
+        _log_json(f"[TS][{kind}] first_hit", {
+            "document_keys": list(doc.keys()),
+            "document_preview": {k: doc.get(k) for k in list(doc.keys())[:12]},
+        })
+
+
 # --- Message helpers ---
 def normalize_message(raw: Any) -> Optional[str]:
     if raw is None:
@@ -65,8 +103,8 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "filter_by": params.get("filter_by"),
     }]}
 
-    print(f"[TS] POST {TYPESENSE_API_URL}")
-    print(f"[TS] Request body: {body}", flush=True)
+    print(f"[TS][books] POST {TYPESENSE_API_URL}", flush=True)
+    _log_typesense_request("books", body)
 
     try:
         r = requests.post(
@@ -78,10 +116,9 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         if r.status_code != 200:
             print(f"[TS] Error body: {r.text[:500]}", flush=True)
             return []
-        hits = r.json().get("results", [{}])[0].get("hits", [])
-        print(f"[TS] Collection={body['searches'][0]['collection']} hits={len(hits)}", flush=True)
-        if hits:
-            print(f"[TS] First doc keys: {list(hits[0].get('document', {}).keys())}", flush=True)
+        response_json = r.json()
+        _log_typesense_response("books", response_json)
+        hits = response_json.get("results", [{}])[0].get("hits", [])
         out = []
         for h in hits:
             doc = h.get("document") or {}
@@ -106,6 +143,8 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "per_page": 15,
         "filter_by": params.get("filter_by") or "",
     }]}
+    print(f"[TS][faq] POST {TYPESENSE_API_URL}", flush=True)
+    _log_typesense_request("faq", body)
     try:
         r = requests.post(
             TYPESENSE_API_URL,
@@ -115,7 +154,9 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
         if r.status_code != 200:
             return []
-        hits = r.json().get("results", [{}])[0].get("hits", [])
+        response_json = r.json()
+        _log_typesense_response("faq", response_json)
+        hits = response_json.get("results", [{}])[0].get("hits", [])
         out: List[Dict[str, Any]] = []
         for h in hits:
             doc = h.get("document") or {}
@@ -157,6 +198,9 @@ def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         }]
     }
 
+    print(f"[TS][events] POST {TYPESENSE_API_URL}", flush=True)
+    _log_typesense_request("events", body)
+
     try:
         r = requests.post(
             TYPESENSE_API_URL,
@@ -170,7 +214,9 @@ def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         if r.status_code != 200:
             return []
 
-        hits = r.json().get("results", [{}])[0].get("hits", [])
+        response_json = r.json()
+        _log_typesense_response("events", response_json)
+        hits = response_json.get("results", [{}])[0].get("hits", [])
         out: List[Dict[str, Any]] = []
 
         for h in hits:

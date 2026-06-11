@@ -31,6 +31,13 @@ client = OpenAI()
 LAST_RESULTS: dict[str, dict] = {}
 
 
+def _log_json(label: str, payload: Any) -> None:
+    try:
+        print(f"{label} {json.dumps(payload, ensure_ascii=False, default=str)}", flush=True)
+    except Exception:
+        print(f"{label} {payload}", flush=True)
+
+
 def _results_context_block(data: dict, max_items: int = 20) -> str:
     """Bouw een compact SYSTEM-contextblok op basis van laatste resultaten."""
     if not data:
@@ -276,6 +283,8 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
     - Geen toolcall  → return tekst-envelop
     - Wel toolcall   → commit outputs + return gevulde envelop (incl. korte ack-tekst)
     """
+    _log_json("[CHAT] user", {"conversation_id": conversation_id, "text": user_text})
+
     # 1) Eerste beurt met tools (system dynamisch met LAST_RESULTS)
     resp = client.responses.create(
         model=MODEL,
@@ -306,9 +315,11 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
         name = call.name
         call_id = getattr(call, "call_id", None) or getattr(call, "id", None)
         args = call.arguments if isinstance(call.arguments, dict) else json.loads(call.arguments or "{}")
+        _log_json("[TOOLS] call", {"name": name, "call_id": call_id, "args": args})
 
         impl = TOOL_IMPLS.get(name)
         result = impl(**args) if impl else {"error": f"Unknown tool: {name}"}
+        _log_json("[TOOLS] result", {"name": name, "call_id": call_id, "result": result})
         # geef call_id mee in result, zodat _handle_tool_result het kan loggen
         result["_call_id"] = call_id
 
@@ -331,6 +342,7 @@ def ask_with_tools(conversation_id: str, user_text: str) -> Union[str, Dict[str,
     if envelope and not (envelope.get("response") or {}).get("message"):
         envelope["response"]["message"] = ack_text or envelope["response"].get("message")
 
+    _log_json("[ENVELOPE] response", envelope)
     print("message " + (envelope.get("response") or {}).get("message", ""), flush=True)
     return envelope or make_envelope(
         "text",
