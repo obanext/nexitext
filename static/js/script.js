@@ -401,9 +401,11 @@ function displaySearchResults(results) {
     results.forEach(result => {
         const resultElement = document.createElement('div');
         resultElement.classList.add('search-result');
+        const ppnParam = encodeURIComponent(result.ppn || '');
+        const isbnParam = encodeURIComponent(result.isbn || '');
         resultElement.innerHTML = `
             <div onclick="fetchAndShowDetailPage('${result.ppn}')">
-                <img src="https://cover.biblion.nl/coverlist.dll/?doctype=morebutton&bibliotheek=oba&style=0&ppn=${result.ppn}&isbn=&lid=&aut=&ti=&size=150" 
+                <img src="https://cover.biblion.nl/coverlist.dll/?doctype=morebutton&bibliotheek=oba&style=0&ppn=${ppnParam}&isbn=${isbnParam}&lid=&aut=&ti=&size=150" 
                      alt="Cover for PPN ${result.ppn}" 
                      class="book-cover">
                 <p>${result.short_title}</p>

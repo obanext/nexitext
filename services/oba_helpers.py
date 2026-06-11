@@ -60,7 +60,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "collection": params.get("collection"),
         "prefix": "false",
         "vector_query": params.get("vector_query"),
-        "include_fields": "*",
+        "include_fields": "ppn,short_title,isbn",
         "per_page": 15,
         "filter_by": params.get("filter_by"),
     }]}
@@ -85,7 +85,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         out = []
         for h in hits:
             doc = h.get("document") or {}
-            out.append({"ppn": doc.get("ppn"), "short_title": doc.get("short_title")})
+            out.append({"ppn": doc.get("ppn"), "short_title": doc.get("short_title"), "isbn": doc.get("isbn")})
         return out
     except Exception:
         return []
