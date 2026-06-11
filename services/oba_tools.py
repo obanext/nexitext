@@ -41,13 +41,57 @@ AUDIENCE_ALIASES = {
     "volwassen": ["volwassen", "volwassenen"],
 }
 
+CONTENT_TYPE_ALIASES = {
+    "fictie": ["fictie", "verhalen", "roman", "romans", "leesboeken"],
+    "nonfictie": ["non-fictie", "nonfictie", "informatieboeken", "informatieve boeken", "info boeken", "info-boeken"],
+}
+
 
 def _audience_is_mentioned(audience: Optional[str], text: str) -> bool:
+    """Accepteer doelgroep alleen in doelgroepcontext.
+
+    Daardoor telt "boeken voor baby's" wel als doelgroep, maar "baby dinosaurussen" niet.
+    """
     if not audience or not text:
         return False
     aliases = AUDIENCE_ALIASES.get(audience, [])
     haystack = text.lower()
-    return any(re.search(r"\b" + re.escape(alias.lower()) + r"\b", haystack) for alias in aliases)
+    for alias in aliases:
+        a = re.escape(alias.lower())
+        patterns = [
+            rf"\bvoor\s+(?:de\s+)?{a}\b",
+            rf"\bvoor\s+(?:kinderen|lezers)?\s*(?:van\s+)?{a}\b",
+            rf"\b{a}boeken\b",
+            rf"\bboeken\s+voor\s+{a}\b",
+        ]
+        if any(re.search(pattern, haystack) for pattern in patterns):
+            return True
+    return False
+
+
+def _content_type_is_mentioned(content_type: Optional[str], text: str) -> bool:
+    if not content_type or not text:
+        return False
+    aliases = CONTENT_TYPE_ALIASES.get(content_type, [])
+    haystack = text.lower()
+    return any(re.search(r"(?<!\w)" + re.escape(alias.lower()) + r"(?!\w)", haystack) for alias in aliases)
+
+
+def _clean_semantic_book_query(query: str, original_text: str) -> str:
+    """Verwijder duidelijke zoek-/doelgroepfrases uit q, behoud het onderwerp.
+
+    Voorbeeld: "boeken voor baby's over slapen" -> "slapen".
+    "baby dinosaurussen" blijft intact omdat daar geen doelgroepconstructie met "voor" staat.
+    """
+    q = (query or "").strip()
+    source = (original_text or q).strip()
+    if not q:
+        return q
+    if re.search(r"\bover\s+(.+)$", source, re.I):
+        topic = re.search(r"\bover\s+(.+)$", source, re.I).group(1).strip()
+        if topic:
+            return topic
+    return q
 
 
 def _merge_filter_by(*parts: Optional[str]) -> str:
@@ -117,6 +161,15 @@ def _build_search_params(
             trusted_indeling_values += FICTION_MAP.get(audience, [])
         if effective_content_type in ("nonfictie", "beide"):
             trusted_indeling_values += NONFICTION_MAP.get(audience, [])
+    elif content_type and _content_type_is_mentioned(content_type, validation_text):
+        # Expliciete materiaalsoort zonder doelgroep: gebruik alle harde indelingen binnen die soort.
+        # Voorbeeld: "informatieboeken over vulkanen" -> alle info-categorieën.
+        if content_type == "fictie":
+            for vals in FICTION_MAP.values():
+                trusted_indeling_values += vals
+        elif content_type == "nonfictie":
+            for vals in NONFICTION_MAP.values():
+                trusted_indeling_values += vals
 
     normalized = normalize_book_filters(
         filters=filters,
@@ -127,8 +180,10 @@ def _build_search_params(
     fb = normalized["filter_by"]
     books = COLLECTION_BOOKS_KN if location_kraaiennest else COLLECTION_BOOKS
 
+    q_text = _clean_semantic_book_query(text, validation_text) if qb.startswith("embedding") else text
+
     return {
-        "q": text,
+        "q": q_text,
         "collection": books,
         "query_by": qb,
         "vector_query": vq,

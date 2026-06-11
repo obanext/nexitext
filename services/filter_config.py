@@ -22,7 +22,7 @@ AMSTERDAM_TZ = ZoneInfo("Europe/Amsterdam")
 BOOK_INDELING: Dict[str, Dict[str, Any]] = {
     "prentenboeken baby": {
         "label": "Prentenboeken baby",
-        "aliases": ["prentenboeken baby", "babyboeken", "boeken voor baby's", "boeken voor babies", "baby"],
+        "aliases": ["prentenboeken baby", "babyboeken", "boeken voor baby's", "boeken voor babies", "voor baby's", "voor babies"],
         "typesense_field": "indeling",
         "typesense_value": "prentenboeken baby",
     },
@@ -273,6 +273,20 @@ def option_is_mentioned(options: Dict[str, Dict[str, Any]], key: str, cfg: Dict[
     return False
 
 
+def book_indeling_is_mentioned(key: str, cfg: Dict[str, Any], text: str) -> bool:
+    """Specifieke validatie voor boek-indeling.
+
+    - brede term "prentenboeken" mag prentenboekfilters valideren;
+    - losse onderwerpwoorden zoals "baby" in "baby dinosaurussen" mogen geen doelgroepfilter valideren.
+    """
+    if not text:
+        return False
+    haystack = norm_text(text)
+    if key in ("prentenboeken tot 4 jaar", "prentenboeken vanaf 4 jaar") and re.search(r"\bprentenboeken\b", haystack):
+        return True
+    return option_is_mentioned(BOOK_INDELING, key, cfg, text)
+
+
 def normalize_book_filters(
     filters: Optional[Dict[str, Any]] = None,
     text: Optional[str] = None,
@@ -296,7 +310,7 @@ def normalize_book_filters(
         resolved = resolve_option(BOOK_INDELING, raw)
         if resolved:
             key, cfg = resolved
-            if trust_explicit_filters or option_is_mentioned(BOOK_INDELING, key, cfg, text):
+            if trust_explicit_filters or book_indeling_is_mentioned(key, cfg, text):
                 normalized.append({"domain": "books", "filter": "indeling", "key": key, "label": cfg["label"], "field": cfg["typesense_field"], "value": cfg["typesense_value"]})
 
     # Audience-derived filters zijn al door de backend gevalideerd tegen de originele tekst.
