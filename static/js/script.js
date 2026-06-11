@@ -422,6 +422,44 @@ function displaySearchResults(results) {
     updateActionButtons();
 }
 
+function formatAgendaDateTime(result) {
+    const rawStart = result?.raw_date?.start;
+    const rawEnd = result?.raw_date?.end;
+
+    if (rawStart) {
+        const startDate = new Date(rawStart);
+        const date = startDate.toLocaleDateString('nl-NL', {
+            timeZone: 'Europe/Amsterdam',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
+        const startTime = startDate.toLocaleTimeString('nl-NL', {
+            timeZone: 'Europe/Amsterdam',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        let timeRange = startTime;
+        if (rawEnd) {
+            const endDate = new Date(rawEnd);
+            const endTime = endDate.toLocaleTimeString('nl-NL', {
+                timeZone: 'Europe/Amsterdam',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            timeRange = `${startTime} - ${endTime}`;
+        }
+
+        return `${date} ${timeRange}`;
+    }
+
+    if (result.date && result.time) return `${result.date} ${result.time}`;
+    if (result.date) return result.date;
+    if (result.time) return result.time;
+    return 'Datum niet beschikbaar';
+}
+
 function displayAgendaResults(results) {
     const searchResultsContainer = document.getElementById('search-results');
     searchResultsContainer.innerHTML = '';
@@ -432,19 +470,7 @@ function displayAgendaResults(results) {
     const limitedResults = results.slice(0, maxItems);
 
     limitedResults.forEach(result => {
-        let formattedDate = result.date || 'Datum niet beschikbaar';
-        let formattedTime = result.time || '';
-
-        if ((!formattedDate || !formattedTime) && result.raw_date && result.raw_date.start) {
-            const startDate = new Date(result.raw_date.start);
-            formattedDate = formattedDate || startDate.toLocaleDateString('nl-NL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            formattedTime = formattedTime || startDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
-        }
-        if ((!formattedTime) && result.raw_date && result.raw_date.end) {
-            const endDate = new Date(result.raw_date.end);
-            formattedTime = (formattedTime ? (formattedTime + ' - ') : '') + endDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
-        }
-
+        const formattedDateTime = formatAgendaDateTime(result);
         const location = result.location || 'Locatie niet beschikbaar';
         const title = result.title || 'Geen titel beschikbaar';
         const summary = result.summary || 'Geen beschrijving beschikbaar';
@@ -457,8 +483,7 @@ function displayAgendaResults(results) {
             <a href="${link}" target="_blank" class="agenda-card-link">
                 <img src="${coverImage}" alt="Agenda cover" class="agenda-card-image">
                 <div class="agenda-card-text">
-                    <div class="agenda-date">${formattedDate}</div>
-                    <div class="agenda-time">${formattedTime}</div>
+                    <div class="agenda-date">${formattedDateTime}</div>
                     <div class="agenda-title">${title}</div>
                     <div class="agenda-location">${location}</div>
                     <div class="agenda-summary">${summary}</div>
@@ -473,7 +498,6 @@ function displayAgendaResults(results) {
         moreButton.classList.add('more-button');
         moreButton.innerHTML = 'Meer';
         moreButton.onclick = () => {
-            const url = results[0].link || '#';
             window.open("https://oba.nl/nl/agenda/volledige-agenda", '_blank');
         };
         searchResultsContainer.appendChild(moreButton);
