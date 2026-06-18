@@ -524,7 +524,8 @@ function displaySearchResults(results) {
                 <img src="https://cover.biblion.nl/coverlist.dll/?doctype=morebutton&bibliotheek=oba&style=0&ppn=${ppnParam}&isbn=${isbnParam}&lid=&aut=&ti=&size=150" 
                      alt="Cover for PPN ${result.ppn}" 
                      class="book-cover">
-                <p>${result.short_title}</p>
+                <p>${result.short_title || ''}</p>
+                <p class="result-description">${result.beschrijving || ''}</p>
             </div>
         `;
         searchResultsContainer.appendChild(resultElement);
