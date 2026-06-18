@@ -492,8 +492,8 @@ def frontend_filter_payload(domain: str) -> Dict[str, Any]:
             "domain": "agenda",
             "groups": [
                 {"key": "waar", "label": "Locatie", "type": "select", "empty_label": "Alle locaties", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_LOCATIONS.items()]},
-                {"key": "leeftijd", "label": "Leeftijdscategorie", "type": "select", "empty_label": "Alle leeftijden", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_AGES.items()]},
-                {"key": "wanneer", "label": "Wanneer", "type": "select", "empty_label": "Alle data", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_WHEN.items()]},
+                {"key": "leeftijd", "label": "Leeftijdscategorie", "type": "radio", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_AGES.items()]},
+                {"key": "wanneer", "label": "Wanneer", "type": "radio", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_WHEN.items()]},
                 {"key": "type_activiteit", "label": "Activiteitstype", "type": "select", "empty_label": "Alle types", "options": [{"value": k, "label": v["label"]} for k, v in AGENDA_TYPES.items()]},
             ],
         }

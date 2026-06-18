@@ -156,6 +156,23 @@ button:disabled {
     font-family: 'Avenir Light', Arial, sans-serif;
 }
 
+#filter-options select {
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    padding: 10px 14px;
+    margin: 4px 0 16px 0;
+    font-family: 'Avenir Light', Arial, sans-serif;
+    font-size: 14px;
+}
+
+#filter-options select:focus {
+    outline: none;
+    border-color: #6d5ab0;
+}
+
 /* Resultaten */
 #result-section {
     flex: 4;

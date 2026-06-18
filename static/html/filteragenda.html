@@ -35,33 +35,29 @@
     <br>
 
     <!-- Leeftijdscategorie (LEEFTIJD) -->
-    <label for="agenda-age">Leeftijdscategorie:</label>
-    <select id="agenda-age">
-        <option value="">Alle leeftijden</option>
-        <option value="0-3">0 t/m 3 jaar</option>
-        <option value="4-12">4 t/m 12 jaar</option>
-        <option value="13-18">13 t/m 18 jaar</option>
-        <option value="19-26">19 t/m 26 jaar</option>
-        <option value="27-66">27 t/m 66 jaar</option>
-        <option value="67+">67 jaar en ouder</option>
-    </select>
-    <br>
+    <fieldset class="filter-group" data-filter-key="leeftijd">
+        <legend>Leeftijdscategorie</legend>
+        <label><input type="radio" name="leeftijd" value="0-3"> 0 t/m 3 jaar</label>
+        <label><input type="radio" name="leeftijd" value="4-12"> 4 t/m 12 jaar</label>
+        <label><input type="radio" name="leeftijd" value="13-18"> 13 t/m 18 jaar</label>
+        <label><input type="radio" name="leeftijd" value="19-26"> 19 t/m 26 jaar</label>
+        <label><input type="radio" name="leeftijd" value="27-66"> 27 t/m 66 jaar</label>
+        <label><input type="radio" name="leeftijd" value="67+"> 67 jaar en ouder</label>
+    </fieldset>
 
     <!-- Wanneer (WANNEER) -->
-    <label for="agenda-date">Wanneer:</label>
-    <select id="agenda-date">
-        <option value="">Alle data</option>
-        <option value="a_today">Vandaag</option>
-        <option value="a_tomorrow">Morgen</option>
-        <option value="b_upcomingweekend">Komend weekend</option>
-        <option value="c_nextweek">Volgende week</option>
-        <option value="d_thismonth">Deze maand</option>
-        <option value="e_nextmonth">Volgende maand</option>
-        <option value="f_next3month">Komende 3 maanden</option>
-        <option value="g_thisyear">Dit jaar</option>
-        <option value="h_nextyear">Volgend jaar</option>
-    </select>
-    <br>
+    <fieldset class="filter-group" data-filter-key="wanneer">
+        <legend>Wanneer</legend>
+        <label><input type="radio" name="wanneer" value="a_today"> Vandaag</label>
+        <label><input type="radio" name="wanneer" value="a_tomorrow"> Morgen</label>
+        <label><input type="radio" name="wanneer" value="b_upcomingweekend"> Komend weekend</label>
+        <label><input type="radio" name="wanneer" value="c_nextweek"> Volgende week</label>
+        <label><input type="radio" name="wanneer" value="d_thismonth"> Deze maand</label>
+        <label><input type="radio" name="wanneer" value="e_nextmonth"> Volgende maand</label>
+        <label><input type="radio" name="wanneer" value="f_next3month"> Komende 3 maanden</label>
+        <label><input type="radio" name="wanneer" value="g_thisyear"> Dit jaar</label>
+        <label><input type="radio" name="wanneer" value="h_nextyear"> Volgend jaar</label>
+    </fieldset>
 
     <!-- Activiteitstype (TYPE_ACTIVITEIT) -->
     <label for="agenda-type">Activiteitstype:</label>

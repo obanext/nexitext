@@ -157,6 +157,14 @@ function decideAndLoadFilter(results) {
 }
 
 /* ===== Functionaliteit chat en zoekresultaten ===== */
+function getAgendaFilterValue(key, selectId) {
+  const radio = document.querySelector(`input[name="${key}"]:checked`);
+  if (radio) return (radio.value || "").trim();
+
+  const select = document.getElementById(selectId);
+  return (select?.value || "").trim();
+}
+
 function checkInput() {
   const userInput = document.getElementById('user-input').value.trim();
   const sendButton = document.getElementById('send-button');
@@ -172,13 +180,13 @@ function checkInput() {
 
   let anySelected = false;
 
-  // Agenda: enable als één van de selects een waarde heeft
+  // Agenda: enable als één van de agendafilters een waarde heeft
   const agendaLocation = document.getElementById("agenda-location");
   if (agendaLocation) {
-    const loc  = (agendaLocation.value || "").trim();
-    const age  = (document.getElementById("agenda-age")?.value || "").trim();
-    const date = (document.getElementById("agenda-date")?.value || "").trim();
-    const type = (document.getElementById("agenda-type")?.value || "").trim();
+    const loc  = getAgendaFilterValue("waar", "agenda-location");
+    const age  = getAgendaFilterValue("leeftijd", "agenda-age");
+    const date = getAgendaFilterValue("wanneer", "agenda-date");
+    const type = getAgendaFilterValue("type_activiteit", "agenda-type");
     anySelected = !!(loc || age || date || type);
   } else {
     // Collectie: enable als er minstens één checkbox aan staat
@@ -768,10 +776,10 @@ async function applyFiltersAndSend() {
     const agendaLocation = document.getElementById("agenda-location");
     if (agendaLocation) {
         filterDomain = "agenda";
-        const location = agendaLocation.value;
-        const age = document.getElementById("agenda-age")?.value || "";
-        const date = document.getElementById("agenda-date")?.value || "";
-        const type = document.getElementById("agenda-type")?.value || "";
+        const location = getAgendaFilterValue("waar", "agenda-location");
+        const age = getAgendaFilterValue("leeftijd", "agenda-age");
+        const date = getAgendaFilterValue("wanneer", "agenda-date");
+        const type = getAgendaFilterValue("type_activiteit", "agenda-type");
 
         const selected = [];
         if (location) { selected.push(`Locatie: ${location}`); filterValuesJson.waar = location; }
@@ -960,6 +968,9 @@ function extractSearchQuery(response) {
 function resetFilters() {
     document.querySelectorAll('#filter-options input[type="radio"]').forEach(r => {
         r.checked = false;
+    });
+    document.querySelectorAll('#filter-options select').forEach(sel => {
+        sel.selectedIndex = 0;
     });
     checkInput();
 }
