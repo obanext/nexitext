@@ -1000,11 +1000,13 @@ function addOpeningMessage() {
 
 function addPlaceholders() {
     const searchResultsContainer = document.getElementById('search-results');
+    searchResultsContainer.classList.remove('agenda-list');
+    searchResultsContainer.classList.add('book-grid');
     searchResultsContainer.innerHTML = `
-        <div><img src="/static/images/placeholder.png" alt="Placeholder"></div>
-        <div><img src="/static/images/placeholder.png" alt="Placeholder"></div>
-        <div><img src="/static/images/placeholder.png" alt="Placeholder"></div>
-        <div><img src="/static/images/placeholder.png" alt="Placeholder"></div>
+        <div><img src="/static/images/placeholderstart.png" alt="Start placeholder"></div>
+        <div><img src="/static/images/placeholderstart.png" alt="Start placeholder"></div>
+        <div><img src="/static/images/placeholderstart.png" alt="Start placeholder"></div>
+        <div><img src="/static/images/placeholderstart.png" alt="Start placeholder"></div>
     `;
 }
 

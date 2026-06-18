@@ -129,7 +129,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "collection": params.get("collection"),
         "prefix": "false",
         "vector_query": params.get("vector_query"),
-        "include_fields": "ppn,short_title,isbn,beschrijving",
+        "include_fields": "ppn,short_title,isbn",
         "per_page": 15,
         "filter_by": params.get("filter_by"),
     }]}
@@ -155,12 +155,7 @@ def typesense_search_books(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         out = []
         for h in hits:
             doc = h.get("document") or {}
-            out.append({
-                "ppn": doc.get("ppn"),
-                "short_title": doc.get("short_title"),
-                "isbn": doc.get("isbn"),
-                "beschrijving": doc.get("beschrijving") or "",
-            })
+            out.append({"ppn": doc.get("ppn"), "short_title": doc.get("short_title"), "isbn": doc.get("isbn")})
         return out
     except Exception:
         return []
@@ -203,6 +198,7 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             vraag = doc.get("vraag")
             antwoord = doc.get("antwoord")
 
+            # Locatie kan komma-gescheiden zijn, alleen eerste nodig
             raw_loc = doc.get("locatie")
             first_location: Optional[str] = None
             if isinstance(raw_loc, str) and raw_loc.strip():
@@ -220,6 +216,7 @@ def typesense_search_faq(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    
     if not TYPESENSE_API_URL or not TYPESENSE_API_KEY:
         return []
 
@@ -265,12 +262,13 @@ def typesense_search_events(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             start = doc.get("starttijd")
             end = doc.get("eindtijd")
 
+         
             title = doc.get("titel") or "Geen titel"
             summary = doc.get("samenvatting") or ""
             cover = doc.get("afbeelding") or ""
             link = doc.get("deeplink") or "#"
             location = doc.get("locatienaam") or doc.get("gebouw") or "Locatie onbekend"
-
+            
             out.append({
                 "title": title,
                 "summary": summary,

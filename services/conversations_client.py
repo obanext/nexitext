@@ -23,7 +23,7 @@ from services.oba_helpers import (
 from services.conversations_config import (
     MODEL,
     FASTMODEL,
-    SYSTEM,
+    build_system_prompt,
     NO_RESULTS_MSG,
 )
 
@@ -97,12 +97,13 @@ def _extract_tool_calls(resp) -> List[Any]:
 
 def _dyn_system_for(conversation_id: str) -> str:
     """Bouw dynamische system-instructies met de laatste resultaten (indien aanwezig)."""
-    dyn = SYSTEM
+    system = build_system_prompt()
+    dyn = system
     prev = LAST_RESULTS.get(conversation_id)
     if prev:
         ctx = _results_context_block(prev, max_items=20)
         if ctx:
-            dyn = f"{SYSTEM}\n\n{ctx}"
+            dyn = f"{system}\n\n{ctx}"
     return dyn
 
 
